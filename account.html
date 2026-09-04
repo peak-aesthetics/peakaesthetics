@@ -826,6 +826,9 @@ footer.site-footer{border-top:1px solid var(--border-soft);}
   padding:12px 14px; color:#fff; font-size:13.5px;
 }
 .form-field input:focus{outline:none; border-color:var(--accent);}
+.credit-balance-box{text-align:center; padding:8px 0;}
+.credit-balance-label{font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;}
+.credit-balance-amount{font-size:34px; font-weight:800; color:var(--mint); font-family:'JetBrains Mono', monospace;}
 
 .account-empty-note{font-size:13px; color:var(--muted); line-height:1.6;}
 
@@ -1274,8 +1277,29 @@ footer.site-footer{border-top:1px solid var(--border-soft);}
               <button class="btn btn-copy" id="referral-copy-btn" onclick="copyReferral()">Copy</button>
             </div>
             <div class="referral-banner">
-              <b>$5 off for them.</b> Anyone who enters this code at checkout gets a flat $5 discount on their order. It's tied to your account, so it can only be used by someone you share it with &mdash; not by you.
+              <b>$5 off for them, $5 credit for you &mdash; every time.</b> Anyone who enters this code at checkout gets an instant flat $5 discount on their order. Once their order goes through, you get a $5 store credit added to your account, with no limit on how many times your code can be used. It's tied to your account, so it can only be redeemed by someone you share it with &mdash; not by you.
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="account-section">
+      <h2>Store Credit</h2>
+      <p class="sub">Earned automatically every time someone completes an order using your referral code.</p>
+      <div class="account-card">
+        <div class="account-body">
+
+          <div id="credit-signed-out">
+            <p class="account-empty-note">Sign in to your account above to see your credit balance.</p>
+          </div>
+
+          <div id="credit-signed-in" style="display:none;">
+            <div class="credit-balance-box">
+              <div class="credit-balance-label">Available credit</div>
+              <div class="credit-balance-amount" id="credit-balance-amount">$0.00</div>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -1755,6 +1779,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
     document.getElementById("auth-logged-in").style.display = "none";
     document.getElementById("referral-signed-out").style.display = "block";
     document.getElementById("referral-signed-in").style.display = "none";
+    document.getElementById("credit-signed-out").style.display = "block";
+    document.getElementById("credit-signed-in").style.display = "none";
   }
 
   function showLoggedInUI(user){
@@ -1763,7 +1789,26 @@ document.addEventListener("DOMContentLoaded", ()=>{
     document.getElementById("account-email").textContent = user.email;
     document.getElementById("referral-signed-out").style.display = "none";
     document.getElementById("referral-signed-in").style.display = "block";
+    document.getElementById("credit-signed-out").style.display = "none";
+    document.getElementById("credit-signed-in").style.display = "block";
     loadOrCreateReferralCode(user.id);
+    loadCreditBalance(user.id);
+  }
+
+  async function loadCreditBalance(userId){
+    const el = document.getElementById("credit-balance-amount");
+    const { data, error } = await sb
+      .from("user_credit_balance")
+      .select("balance")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if(error){
+      el.textContent = "Error";
+      return;
+    }
+    const balance = data ? data.balance : 0;
+    el.textContent = money(balance);
   }
 
   window.handleSignUp = async () => {
@@ -1776,7 +1821,12 @@ document.addEventListener("DOMContentLoaded", ()=>{
     }
     const btn = document.getElementById("signup-btn");
     btn.disabled = true;
-    const { data, error } = await sb.auth.signUp({ email, password });
+    const redirectUrl = window.location.origin + window.location.pathname.replace(/account\.html$/, "index.html");
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: redirectUrl }
+    });
     btn.disabled = false;
     if(error){
       setAuthMessage(error.message, "error");

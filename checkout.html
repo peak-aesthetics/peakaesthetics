@@ -1875,6 +1875,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
     `;
   }
 
+  let appliedReferralCode = null;
+
   window.applyReferralCode = async () => {
     const input = document.getElementById("referral-code-input");
     const btn = document.getElementById("referral-apply-btn");
@@ -1888,7 +1890,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     }
 
     btn.disabled = true;
-    const { data, error } = await sb.rpc("redeem_referral_code", { input_code: code });
+    const { data, error } = await sb.rpc("check_referral_code", { input_code: code });
     btn.disabled = false;
 
     if(error){
@@ -1902,13 +1904,13 @@ document.addEventListener("DOMContentLoaded", ()=>{
         not_logged_in: "You need to be signed in to redeem a code.",
         invalid_code: "That code doesn't exist.",
         own_code: "You can't redeem your own referral code.",
-        already_redeemed: "You've already redeemed a referral code before.",
       };
       msgEl.textContent = messages[data.error] || "That code couldn't be applied.";
       msgEl.className = "referral-apply-message error";
       return;
     }
 
+    appliedReferralCode = code;
     referralDiscount = data.discount;
     updateOrderTotals();
     renderReferralSection();
@@ -1943,7 +1945,34 @@ document.addEventListener("DOMContentLoaded", ()=>{
     updateOrderTotals();
   };
 
-  window.placeOrder = () => {
+  window.placeOrder = async () => {
+    const placeBtn = document.querySelector(".order-summary .btn-white.btn-block");
+
+    if(appliedReferralCode){
+      if(placeBtn) placeBtn.disabled = true;
+      const { data, error } = await sb.rpc("complete_referral_order", { input_code: appliedReferralCode });
+      if(placeBtn) placeBtn.disabled = false;
+
+      if(error || !data.success){
+        const messages = {
+          not_logged_in: "You need to be signed in to use a referral code.",
+          invalid_code: "That referral code is no longer valid.",
+          own_code: "You can't redeem your own referral code.",
+        };
+        // reset back to an editable state so there's somewhere to show the error
+        referralDiscount = 0;
+        appliedReferralCode = null;
+        updateOrderTotals();
+        await renderReferralSection();
+        const msgEl = document.getElementById("referral-apply-message");
+        if(msgEl){
+          msgEl.textContent = (data && messages[data.error]) || "We couldn't apply your referral code. Please remove it and try again.";
+          msgEl.className = "referral-apply-message error";
+        }
+        return;
+      }
+    }
+
     if(selectedPayment === "crypto"){
       window.location.href = "crypto-payment.html";
       return;
