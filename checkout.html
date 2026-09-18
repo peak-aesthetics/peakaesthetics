@@ -1462,7 +1462,7 @@ function renderFooter(){
         <a href="peptide-calculator.html">Calculator</a>
         <a href="lab-results.html">Lab Results</a>
       </div>
-      <p class="footer-address">(727) 387-1284 &middot; support@peakaesthetics.net</p>
+      <p class="footer-address">(727) 304-5609 &middot; support@peakaesthetics.net</p>
     </div>
   </div>
 
@@ -1736,7 +1736,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     return out;
   }
 
-  let selectedPayment = "card";
+  let selectedPayment = "zelle";
 
   function renderCheckout(){
     const root = document.getElementById("checkout-root");
@@ -1799,27 +1799,16 @@ document.addEventListener("DOMContentLoaded", ()=>{
             <h2>Payment Method</h2>
             <p class="sub">Choose how you'd like to pay.</p>
             <div class="pay-options">
-              <label class="pay-option active" id="pay-option-card">
-                <input type="radio" name="pay" value="card" checked onchange="selectPayment('card')">
+              <label class="pay-option active" id="pay-option-zelle">
+                <input type="radio" name="pay" value="zelle" checked onchange="selectPayment('zelle')">
                 <div class="txt">
-                  <div class="title">Credit / Debit Card</div>
-                  <div class="desc">Visa, Mastercard, Amex.</div>
+                  <div class="title">Zelle</div>
+                  <div class="desc">Pay directly via Zelle from your banking app.</div>
                 </div>
               </label>
-              <div class="pay-card-fields show" id="pay-card-fields">
-                <div class="form-grid">
-                  <div class="form-field full"><label>Card Number</label><input type="text" placeholder="1234 1234 1234 1234"></div>
-                  <div class="form-field"><label>Expiry</label><input type="text" placeholder="MM / YY"></div>
-                  <div class="form-field"><label>CVC</label><input type="text" placeholder="123"></div>
-                </div>
+              <div class="pay-crypto-fields show" id="pay-zelle-fields">
+                <p>Payment details and a QR code will be shown on the next step after you place your order.</p>
               </div>
-              <label class="pay-option" id="pay-option-ach">
-                <input type="radio" name="pay" value="ach" onchange="selectPayment('ach')">
-                <div class="txt">
-                  <div class="title">Bank Transfer (ACH)</div>
-                  <div class="desc">Earn a <b>$10 gift card</b> toward your next order when you pay by ACH.</div>
-                </div>
-              </label>
               <label class="pay-option" id="pay-option-crypto">
                 <input type="radio" name="pay" value="crypto" onchange="selectPayment('crypto')">
                 <div class="txt">
@@ -2018,10 +2007,9 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
   window.selectPayment = (method) => {
     selectedPayment = method;
-    document.getElementById("pay-option-card").classList.toggle("active", method === "card");
-    document.getElementById("pay-option-ach").classList.toggle("active", method === "ach");
+    document.getElementById("pay-option-zelle").classList.toggle("active", method === "zelle");
     document.getElementById("pay-option-crypto").classList.toggle("active", method === "crypto");
-    document.getElementById("pay-card-fields").classList.toggle("show", method === "card");
+    document.getElementById("pay-zelle-fields").classList.toggle("show", method === "zelle");
     document.getElementById("pay-crypto-fields").classList.toggle("show", method === "crypto");
     updateOrderTotals();
   };
@@ -2166,25 +2154,47 @@ document.addEventListener("DOMContentLoaded", ()=>{
       return;
     }
 
-    // Card / ACH: there is no real payment processor wired up yet, so there
-    // is no way to verify this order actually succeeded. Nothing gets
-    // logged to the real orders table — this stays a preview confirmation
-    // only, same as it's always honestly been labeled.
-    localStorage.removeItem(CART_KEY);
-    renderCartBadge();
-    const root = document.getElementById("checkout-root");
-    root.innerHTML = `
-      <div class="confirm-wrap">
-        <div class="confirm-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
-        <h2>Order placed</h2>
-        <p>Thanks &mdash; we've got it. A confirmation would normally be emailed to you here.</p>
-        <div class="confirm-order-no">Order ${randOrderNumber()}</div>
-        <div>
-          <a class="btn btn-white" href="shop.html">Continue Shopping</a>
-        </div>
-        <p class="confirm-note">This is a design preview &mdash; no payment was processed and no order was actually placed.</p>
-      </div>
-    `;
+    // Zelle: creates a real order immediately (status 'pending_payment') so
+    // a real order number can be shown right away. Payment itself can't be
+    // verified automatically — Zelle has no API for that — so this hands
+    // off to a dedicated page where the customer self-reports their
+    // payment, which is what actually notifies fulfillment.
+    if(supabaseConfigured){
+      const { data: zelleResult, error: zelleError } = await sb.rpc("create_zelle_order", {
+        p_buyer_name: buyerInfo.name,
+        p_buyer_email: buyerInfo.email,
+        p_shipping_address: buyerInfo.address,
+        p_shipping_city: buyerInfo.city,
+        p_shipping_state: buyerInfo.state,
+        p_shipping_zip: buyerInfo.zip,
+        p_shipping_country: buyerInfo.country,
+        p_items: itemsSnapshot,
+        p_subtotal: totals.subtotal,
+        p_shipping_cost: totals.shipping,
+        p_discount_crypto: totals.cryptoDiscount,
+        p_discount_referral: totals.referralDiscount,
+        p_discount_credit: totals.creditToApply,
+        p_total: totals.finalTotal
+      });
+
+      if(!zelleError && zelleResult && zelleResult.success){
+        localStorage.removeItem(CART_KEY);
+        renderCartBadge();
+        window.location.href = "zelle-payment.html?order=" + zelleResult.order_id;
+        return;
+      }
+
+      if(errEl){
+        errEl.textContent = "We couldn't start your order. Please try again.";
+        errEl.className = "referral-apply-message error";
+      }
+      return;
+    }
+
+    if(errEl){
+      errEl.textContent = "Zelle checkout isn't connected yet. Please try again later.";
+      errEl.className = "referral-apply-message error";
+    }
   };
 
   renderCheckout();
